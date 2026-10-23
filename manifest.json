@@ -141,5 +141,70 @@
         "default_widget": "tile"
       }
     }
-  ]
+  ],
+  "marketplace": {
+    "metadata_version": 2,
+    "display_name": "Reolink cameras",
+    "summary": "Connect local Reolink cameras and NVR channels for monitoring and automations.",
+    "category": "camera",
+    "regions": [
+      "WW"
+    ],
+    "languages": [
+      "en"
+    ],
+    "publisher": {
+      "name": "PiPhi Network",
+      "website_url": "https://piphi.io",
+      "support_url": "https://github.com/PiPhi-io/piphi-network-reolink/issues",
+      "security_contact": "support@piphi.io"
+    },
+    "access": [
+      {
+        "id": "local_network",
+        "label": "Local network access",
+        "reason": "Connects directly to the configured Reolink camera or NVR and discovers its available channels.",
+        "required": true
+      },
+      {
+        "id": "credentials",
+        "label": "Camera or NVR credentials",
+        "reason": "Authenticates to the configured Reolink device while keeping credentials out of state, telemetry, events, logs, and diagnostics.",
+        "required": true
+      }
+    ],
+    "compatibility": [
+      {
+        "brand": "Reolink",
+        "model": "Cameras, video doorbells, and NVRs supported by reolink_aio with local access enabled"
+      }
+    ],
+    "documentation_url": "https://github.com/PiPhi-io/piphi-network-reolink",
+    "support_url": "https://github.com/PiPhi-io/piphi-network-reolink/issues",
+    "changelog_url": "https://github.com/PiPhi-io/piphi-network-reolink/releases",
+    "quality_tier": "unrated",
+    "governance": {
+      "schema_version": 1,
+      "publication_status": "draft",
+      "rollout_percent": 0,
+      "lifecycle_status": "active",
+      "qualification": {
+        "status": "unverified"
+      }
+    },
+    "device_types": [
+      "camera",
+      "video doorbell",
+      "network video recorder"
+    ],
+    "protocols": [
+      "Reolink local API",
+      "Baichuan"
+    ],
+    "discovery_methods": [
+      "manual"
+    ],
+    "connectivity": "local",
+    "offline_support": "full"
+  }
 }

@@ -10,16 +10,17 @@ Before cutting a release:
 - Run the local validation and conformance tests.
 - Run `piphi-network-create publish-check -C .` from this project.
 
-The generated workflow is triggered manually from GitHub Actions. It bumps the
-semantic version, updates release metadata, commits and tags the release, builds
-a multi-architecture Docker image, pushes it, and creates a GitHub release.
+The workflow is triggered manually from the default branch with an existing,
+immutable semantic-version tag. It verifies that the tag matches all release
+metadata, runs the release gates, builds a multi-architecture image with SBOM
+and provenance, pushes it, attests it, and creates a GitHub prerelease with
+checksummed source and Python distribution assets.
 
-Images starting with `ghcr.io/` publish to GitHub Container Registry. Images
-using `docker.io/org/image:tag` or `org/image:tag` publish to Docker Hub with
-the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets.
+The image is published to GitHub Container Registry with the repository's
+short-lived `GITHUB_TOKEN`; no long-lived registry credential is required.
 
 Current image target:
 
 ```text
-docker.io/piphinetwork/piphi-network-reolink:0.1.0
+ghcr.io/piphi-io/piphi-network-reolink:0.1.0
 ```

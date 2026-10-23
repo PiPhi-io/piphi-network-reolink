@@ -17,7 +17,7 @@
     "website": "https://piphi.io"
   },
   "license": "Apache-2.0",
-  "image": "docker.io/piphinetwork/piphi-network-reolink:0.1.0",
+  "image": "ghcr.io/piphi-io/piphi-network-reolink:0.1.0",
   "platforms": [
     "linux"
   ],
@@ -25,7 +25,7 @@
     "linux": {
       "type": "container",
       "container": {
-        "image": "docker.io/piphinetwork/piphi-network-reolink:0.1.0",
+        "image": "ghcr.io/piphi-io/piphi-network-reolink:0.1.0",
         "ports": [
           {
             "container": 4225,
@@ -182,11 +182,11 @@
     "documentation_url": "https://github.com/PiPhi-io/piphi-network-reolink",
     "support_url": "https://github.com/PiPhi-io/piphi-network-reolink/issues",
     "changelog_url": "https://github.com/PiPhi-io/piphi-network-reolink/releases",
-    "quality_tier": "unrated",
+    "quality_tier": "bronze",
     "governance": {
       "schema_version": 1,
-      "publication_status": "draft",
-      "rollout_percent": 0,
+      "publication_status": "beta",
+      "rollout_percent": 1,
       "lifecycle_status": "active",
       "qualification": {
         "status": "unverified"

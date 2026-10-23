@@ -45,9 +45,9 @@ events, logs, and diagnostics.
 ## Container
 
 ```bash
-docker build -t docker.io/piphinetwork/piphi-network-reolink:0.1.0 .
-docker run --rm -p 4225:4225 docker.io/piphinetwork/piphi-network-reolink:0.1.0
+docker build -t ghcr.io/piphi-io/piphi-network-reolink:0.1.0 .
+docker run --rm -p 4225:4225 ghcr.io/piphi-io/piphi-network-reolink:0.1.0
 ```
 
-Hardware verification remains required against representative standalone,
-doorbell, dual-lens, battery, and NVR models before the first release.
+The initial release is a Bronze beta while hardware verification expands across
+representative standalone, doorbell, dual-lens, battery, and NVR models.

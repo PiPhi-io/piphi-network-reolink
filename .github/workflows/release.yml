@@ -3,192 +3,93 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      release_type:
-        description: Semantic version action
+      release_ref:
+        description: Existing semantic-version release tag (for example v0.1.0)
         required: true
-        default: patch
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
-          - prepatch
-          - preminor
-          - premajor
-          - prerelease
-          - release
-          - custom
-      preid:
-        description: Prerelease channel for pre* and prerelease actions
-        required: true
-        default: alpha
-        type: choice
-        options:
-          - alpha
-          - beta
-          - rc
-      custom_version:
-        description: Explicit semantic version when release_type is custom
-        required: false
         type: string
-      push_latest:
-        description: Also publish latest for stable releases
-        required: true
-        default: true
-        type: boolean
 
 permissions:
   contents: write
   packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
-  group: piphi-network-reolink-release-${{ github.event.repository.full_name }}
+  group: reolink-release-${{ inputs.release_ref }}
   cancel-in-progress: false
 
 env:
-  RELEASE_IMAGE: docker.io/piphinetwork/piphi-network-reolink
-  RELEASE_REGISTRY_KIND: dockerhub
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
-  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN != '' && secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
+  IMAGE_NAME: ghcr.io/piphi-io/piphi-network-reolink
+  RELEASE_REF: ${{ inputs.release_ref }}
 
 jobs:
   release:
+    name: Verify, publish, and release
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.ref_name }}
-
-      - name: Require default branch
+      - name: Require default-branch dispatch and a version tag
         shell: bash
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF_NAME}" != "${{ github.event.repository.default_branch }}" ]]; then
-            echo "Releases must be triggered from ${{ github.event.repository.default_branch }}." >&2
+            echo "Dispatch releases from ${{ github.event.repository.default_branch }}." >&2
             exit 1
           fi
+          if [[ ! "${RELEASE_REF}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "release_ref must be an existing semantic-version tag such as v0.1.0." >&2
+            exit 1
+          fi
+
+      - name: Check out immutable release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ env.RELEASE_REF }}
+          persist-credentials: false
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip
-
-      - name: Install project
-        run: python -m pip install -e .[dev]
-
-      - name: Run checks
-        run: python -m compileall -q src scripts
-
-      - name: Run tests
-        run: pytest
-
-      - name: Validate scaffold contract
-        run: python scripts/validate.py
-
-      - name: Validate release script
+      - name: Install locked development dependencies
         run: |
-          python3 -m py_compile scripts/release.py
-          python3 scripts/release.py --bump patch --docker-image "${RELEASE_IMAGE}" --dry-run
+          python -m pip install --disable-pip-version-check pdm
+          pdm install -G dev --frozen-lockfile
 
-      - name: Resolve release version
-        id: version
+      - name: Validate tag and synchronized release metadata
+        run: pdm run python scripts/check_release.py "${RELEASE_REF}"
+
+      - name: Run release gates
+        run: |
+          pdm run pytest
+          pdm run ruff check src tests scripts/check_release.py
+          pdm run python scripts/validate.py
+          pdm build
+
+      - name: Assemble release assets
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ inputs.release_type }}" == "custom" ]]; then
-            if [[ -z "${{ inputs.custom_version }}" ]]; then
-              echo "custom_version is required when release_type=custom" >&2
-              exit 1
-            fi
-            VERSION=$(python scripts/release.py --set-version "${{ inputs.custom_version }}" --docker-image "${RELEASE_IMAGE}")
-          else
-            VERSION=$(python scripts/release.py --bump "${{ inputs.release_type }}" --preid "${{ inputs.preid }}" --docker-image "${RELEASE_IMAGE}")
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [[ "$VERSION" == *-* ]]; then
-            echo "stable=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "stable=true" >> "$GITHUB_OUTPUT"
-          fi
-          echo "Resolved version: $VERSION"
-
-      - name: Reject latest on prereleases
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${{ inputs.push_latest }}" == "true" && "${{ steps.version.outputs.stable }}" != "true" ]]; then
-            echo "latest can only be published for stable releases." >&2
-            exit 1
-          fi
-
-      - name: Fail if release tag already exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="v${{ steps.version.outputs.version }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists locally." >&2
-            exit 1
-          fi
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists on origin." >&2
-            exit 1
-          fi
-
-      - name: Commit release metadata locally
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
-          for file in pyproject.toml package.json go.mod; do
-            if [[ -f "$file" ]]; then
-              git add "$file"
-            fi
-          done
-          git commit -m "release: v${{ steps.version.outputs.version }}"
-          git tag "v${{ steps.version.outputs.version }}"
-
-      - name: Capture release revision
-        id: git
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Require supported registry
-        if: ${{ env.RELEASE_REGISTRY_KIND == 'unsupported' }}
-        shell: bash
-        run: |
-          echo "Use ghcr.io/org/image, docker.io/org/image, or org/image for RELEASE_IMAGE." >&2
-          exit 1
+          VERSION="${RELEASE_REF#v}"
+          mkdir -p release
+          cp dist/* release/
+          tar \
+            --exclude='*/__pycache__' \
+            --exclude='*/.pytest_cache' \
+            -czf "release/piphi-network-reolink-${VERSION}.tar.gz" \
+            manifest.json capability-catalog.json schema src Dockerfile pyproject.toml pdm.lock README.md docs examples
+          cd release
+          sha256sum ./* > SHA256SUMS
 
       - name: Log in to GitHub Container Registry
-        if: ${{ env.RELEASE_REGISTRY_KIND == 'ghcr' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub
-        if: ${{ env.RELEASE_REGISTRY_KIND == 'dockerhub' && env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
-        uses: docker/login-action@v3
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
-      - name: Require Docker Hub credentials
-        if: ${{ env.RELEASE_REGISTRY_KIND == 'dockerhub' && (env.DOCKERHUB_USERNAME == '' || env.DOCKERHUB_TOKEN == '') }}
-        shell: bash
-        run: |
-          echo "Set DOCKERHUB_USERNAME/DOCKERHUB_TOKEN or DOCKER_USERNAME/DOCKER_PASSWORD secrets before releasing." >&2
-          exit 1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -197,53 +98,49 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Prepare image metadata
-        id: meta
+        id: metadata
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.RELEASE_IMAGE }}
+          images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=latest,enable=${{ inputs.push_latest && steps.version.outputs.stable == 'true' }}
+            type=semver,pattern={{version}},value=${{ env.RELEASE_REF }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_REF }}
+            type=raw,value=latest,enable=${{ !contains(env.RELEASE_REF, '-') }}
           labels: |
-            org.opencontainers.image.title=Piphi Network Reolink
-            org.opencontainers.image.description=PiPhi integration runtime generated by piphi-network-create.
+            org.opencontainers.image.title=PiPhi Network Reolink
+            org.opencontainers.image.description=Local Reolink camera and NVR integration for PiPhi Network.
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ steps.git.outputs.sha }}
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.RELEASE_REF }}
 
-      - name: Build and push image
+      - name: Build and push multi-platform image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
-          cache-to: type=gha,mode=min
+          cache-to: type=gha,mode=max
 
-      - name: Push release commit and tag
-        shell: bash
-        run: |
-          set -euo pipefail
-          git push origin HEAD:${GITHUB_REF_NAME}
-          git push origin "v${{ steps.version.outputs.version }}"
+      - name: Attest container image
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
+          tag_name: ${{ env.RELEASE_REF }}
+          name: Reolink ${{ env.RELEASE_REF }}
           generate_release_notes: true
-          prerelease: ${{ steps.version.outputs.stable != 'true' }}
-          name: v${{ steps.version.outputs.version }}
-
-      - name: Release summary
-        shell: bash
-        run: |
-          echo "Published ${{ env.RELEASE_IMAGE }}:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ inputs.push_latest }}" == "true" && "${{ steps.version.outputs.stable }}" == "true" ]]; then
-            echo "Published ${{ env.RELEASE_IMAGE }}:latest" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "Release revision: ${{ steps.git.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: release/*

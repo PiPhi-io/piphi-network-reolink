@@ -206,5 +206,8 @@
     ],
     "connectivity": "local",
     "offline_support": "full"
+  },
+  "onboarding": {
+    "mode": "manual"
   }
 }
